@@ -56,11 +56,19 @@ func Evaluate(chrom *Chromosome, graph *Graph) {
 // Repair приводит хромосому к допустимому виду: удаляет ребра, нарушающие условие (общая вершина).
 func Repair(chrom *Chromosome, graph *Graph) {
 	used := make(map[int]bool)
-	for i, gene := range chrom.Genes {
-		if gene {
-			edge := graph.Edges[i]
+	indices := make([]int, len(graph.Edges))
+	for i := range indices {
+		indices[i] = i
+	}
+	rand.Shuffle(len(indices), func(i, j int) {
+		indices[i], indices[j] = indices[j], indices[i]
+	})
+
+	for _, idx := range indices {
+		if chrom.Genes[idx] {
+			edge := graph.Edges[idx]
 			if used[edge.U] || used[edge.V] {
-				chrom.Genes[i] = false
+				chrom.Genes[idx] = false
 			} else {
 				used[edge.U] = true
 				used[edge.V] = true
@@ -126,24 +134,23 @@ func ClassicMutation(chrom *Chromosome, mutationRate float64) {
 
 // IslandMutation – более сложный оператор мутации для островной модели, выполняющий локальный поиск.
 func IslandMutation(chrom *Chromosome, mutationRate float64, graph *Graph) {
+	originalFitness := chrom.Fitness
+	tempGenes := make([]bool, len(chrom.Genes))
+	copy(tempGenes, chrom.Genes)
+
 	for i := 0; i < len(chrom.Genes); i++ {
 		if rand.Float64() < mutationRate {
-			// Пробное переключение гена.
-			chrom.Genes[i] = !chrom.Genes[i]
-			// Оценка результата после ремонта.
-			temp := make([]bool, len(chrom.Genes))
-			copy(temp, chrom.Genes)
-			tempChrom := Chromosome{Genes: temp}
-			Repair(&tempChrom, graph)
-			Evaluate(&tempChrom, graph)
-			// Если улучшение не достигнуто, возвращаем предыдущее значение.
-			if tempChrom.Fitness < chrom.Fitness {
-				chrom.Genes[i] = !chrom.Genes[i]
-			} else {
-				Repair(chrom, graph)
-				Evaluate(chrom, graph)
-			}
+			tempGenes[i] = !tempGenes[i]
 		}
+	}
+
+	tempChrom := Chromosome{Genes: tempGenes}
+	Repair(&tempChrom, graph)
+	Evaluate(&tempChrom, graph)
+
+	if tempChrom.Fitness >= originalFitness {
+		chrom.Genes = tempChrom.Genes
+		chrom.Fitness = tempChrom.Fitness
 	}
 }
 
@@ -260,18 +267,15 @@ func chromosomeKey(chrom Chromosome) string {
 func (ga *GeneticAlgorithm) Run() Chromosome {
 	rand.Seed(time.Now().UnixNano())
 	if ga.EvolutionModel == Island {
-		// Островная модель: разделяем популяцию на острова.
 		islands := ga.initializeIslands()
 		for gen := 0; gen < ga.Generations; gen++ {
 			for i := 0; i < ga.NumIslands; i++ {
 				islands[i] = evolveIsland(islands[i], ga)
 			}
-			// Миграция между островами.
 			if (gen+1)%ga.MigrationInterval == 0 {
 				islands = migrate(islands)
 			}
 		}
-		// Объединяем острова и возвращаем лучшее решение.
 		merged := mergeIslands(islands)
 		ga.Population = merged
 		return ga.GetBestChromosome()
@@ -298,8 +302,7 @@ func (ga *GeneticAlgorithm) Run() Chromosome {
 		}
 		return ga.GetBestChromosome()
 	} else {
-		// Классическая модель.
-		ga.InitializePopulation()
+		// Классическая модель
 		for gen := 0; gen < ga.Generations; gen++ {
 			ga.EvolvePopulation()
 		}
@@ -313,19 +316,33 @@ func (ga *GeneticAlgorithm) Run() Chromosome {
 func (ga *GeneticAlgorithm) initializeIslands() [][]Chromosome {
 	islands := make([][]Chromosome, ga.NumIslands)
 	islandSize := ga.PopulationSize / ga.NumIslands
-	ga.InitializePopulation()
-	shuffled := make([]Chromosome, len(ga.Population))
-	copy(shuffled, ga.Population)
-	rand.Shuffle(len(shuffled), func(i, j int) {
-		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+
+	// Создаём популяцию для всех островов
+	allChromosomes := make([]Chromosome, ga.PopulationSize)
+	numEdges := len(ga.Graph.Edges)
+	for i := 0; i < ga.PopulationSize; i++ {
+		genes := make([]bool, numEdges)
+		for j := 0; j < numEdges; j++ {
+			genes[j] = rand.Float64() < 0.5
+		}
+		chrom := Chromosome{Genes: genes}
+		Repair(&chrom, ga.Graph)
+		Evaluate(&chrom, ga.Graph)
+		allChromosomes[i] = chrom
+	}
+
+	// Перемешиваем и распределяем по островам
+	rand.Shuffle(len(allChromosomes), func(i, j int) {
+		allChromosomes[i], allChromosomes[j] = allChromosomes[j], allChromosomes[i]
 	})
+
 	for i := 0; i < ga.NumIslands; i++ {
 		start := i * islandSize
 		end := start + islandSize
 		if i == ga.NumIslands-1 {
-			end = len(shuffled)
+			end = len(allChromosomes)
 		}
-		islands[i] = shuffled[start:end]
+		islands[i] = allChromosomes[start:end]
 	}
 	return islands
 }
@@ -351,10 +368,11 @@ func evolveIsland(population []Chromosome, ga *GeneticAlgorithm) []Chromosome {
 	return newPopulation
 }
 
-// migrate выполняет обмен лучшими особями между островами.
+// Migrate выполняет обмен лучшими особями между островами.
 func migrate(islands [][]Chromosome) [][]Chromosome {
 	numIslands := len(islands)
 	bests := make([]Chromosome, numIslands)
+
 	for i := 0; i < numIslands; i++ {
 		bests[i] = islands[i][0]
 		for _, chrom := range islands[i] {
@@ -363,11 +381,20 @@ func migrate(islands [][]Chromosome) [][]Chromosome {
 			}
 		}
 	}
+
 	for i := 0; i < numIslands; i++ {
 		sourceIndex := (i - 1 + numIslands) % numIslands
-		idx := rand.Intn(len(islands[i]))
-		islands[i][idx] = bests[sourceIndex]
+		minFitness := islands[i][0].Fitness
+		minIdx := 0
+		for j, chrom := range islands[i] {
+			if chrom.Fitness < minFitness {
+				minFitness = chrom.Fitness
+				minIdx = j
+			}
+		}
+		islands[i][minIdx] = bests[sourceIndex]
 	}
+
 	return islands
 }
 
