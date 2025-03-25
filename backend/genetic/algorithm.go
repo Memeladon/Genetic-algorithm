@@ -1,6 +1,7 @@
 package genetic
 
 import (
+	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -8,15 +9,15 @@ import (
 
 // NewGeneticAlgorithm создаёт экземпляр алгоритма с заданными параметрами.
 func NewGeneticAlgorithm(graph *Graph,
-	model EvolutionModel,
-	popSize, generations int,
+	evolutionModel EvolutionModel,
+	populationSize, generations int,
 	mutationRate, crossoverRate float64,
 	numIslands, migrationInterval int,
 ) *GeneticAlgorithm {
 	return &GeneticAlgorithm{
 		Graph:             graph,
-		EvolutionModel:    model,
-		PopulationSize:    popSize,
+		EvolutionModel:    evolutionModel,
+		PopulationSize:    populationSize,
 		Generations:       generations,
 		MutationRate:      mutationRate,
 		CrossoverRate:     crossoverRate,
@@ -91,6 +92,10 @@ func TournamentSelection(population []Chromosome, tournamentSize int) Chromosome
 
 // ClassicCrossover выполняет одноточечный кроссовер между двумя родителями.
 func ClassicCrossover(parent1, parent2 Chromosome) Chromosome {
+	if len(parent1.Genes) == 0 {
+		return parent1 // Возвращаем родителя без изменений
+	}
+
 	length := len(parent1.Genes)
 	point := rand.Intn(length)
 	childGenes := make([]bool, length)
@@ -156,6 +161,7 @@ func IslandMutation(chrom *Chromosome, mutationRate float64, graph *Graph) {
 
 // EvolvePopulation выполняет один шаг эволюции для текущей популяции.
 func (ga *GeneticAlgorithm) EvolvePopulation() {
+
 	newPopulation := make([]Chromosome, 0, ga.PopulationSize)
 	tournamentSize := 3
 
@@ -194,6 +200,7 @@ func (ga *GeneticAlgorithm) EvolvePopulation() {
 				}
 			}
 		}
+
 		// Применение оператора мутации.
 		switch ga.EvolutionModel {
 		case Classic:
@@ -213,6 +220,8 @@ func (ga *GeneticAlgorithm) EvolvePopulation() {
 		newPopulation = append(newPopulation, child)
 	}
 	ga.Population = newPopulation
+	log.Printf("Новая популяция создана. Лучшая приспособленность: %d",
+		ga.GetBestChromosome().Fitness)
 }
 
 // GetBestChromosome возвращает лучшую хромосому из популяции.
