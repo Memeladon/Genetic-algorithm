@@ -19,8 +19,13 @@ type ControlsPanel struct {
 	NumIslands        *widget.Entry
 	MigrationInterval *widget.Entry
 	EvolutionModel    *widget.RadioGroup
-	OnStart           func()
-	OnStop            func()
+
+	CrossoverType  *widget.RadioGroup
+	MutationType   *widget.RadioGroup
+	SelectionType  *widget.RadioGroup
+	TournamentSize *widget.Entry
+	OnStart        func()
+	OnStop         func()
 }
 
 func NewControlsPanel() *ControlsPanel {
@@ -31,23 +36,25 @@ func NewControlsPanel() *ControlsPanel {
 		CrossoverRate:     widget.NewEntry(),
 		NumIslands:        widget.NewEntry(),
 		MigrationInterval: widget.NewEntry(),
-		EvolutionModel:    widget.NewRadioGroup([]string{"Classic", "Island", "Combined"}, nil),
-	}
+		EvolutionModel:    widget.NewRadioGroup([]string{"Classic", "Island", "Steady-State", "Memetic", "Combined"}, nil),
 
-	cp.EvolutionModel.SetSelected("Classic")
+		CrossoverType:  widget.NewRadioGroup([]string{"Single-point", "Two-point", "Combined"}, nil),
+		MutationType:   widget.NewRadioGroup([]string{"Classic", "Island", "Steady-State", "Conflict-Adaptive", "Augmenting-Path", "Combined"}, nil),
+		SelectionType:  widget.NewRadioGroup([]string{"Tournament", "Roulette", "Rank"}, nil),
+		TournamentSize: widget.NewEntry(),
+	}
 	cp.setDefaults()
 
-	cp.StartBtn = widget.NewButton("Старт", func() {
+	cp.StartBtn = widget.NewButton("Start", func() {
 		if cp.OnStart != nil {
 			cp.OnStart()
 		}
 	})
-	cp.StopBtn = widget.NewButton("Стоп", func() {
+	cp.StopBtn = widget.NewButton("Stop", func() {
 		if cp.OnStop != nil {
 			cp.OnStop()
 		}
 	})
-
 	return cp
 }
 
@@ -58,15 +65,22 @@ func (cp *ControlsPanel) setDefaults() {
 	cp.CrossoverRate.SetText("0.8")
 	cp.NumIslands.SetText("4")
 	cp.MigrationInterval.SetText("10")
+
+	cp.EvolutionModel.SetSelected("Classic")
+	cp.CrossoverType.SetSelected("Single-point")
+	cp.MutationType.SetSelected("Classic")
+	cp.SelectionType.SetSelected("Tournament")
+	cp.TournamentSize.SetText("3")
 }
 
 func (cp *ControlsPanel) GetParams() backend.Params {
 	popSize, _ := strconv.Atoi(cp.PopulationSize.Text)
-	generations, _ := strconv.Atoi(cp.Generations.Text)
+	gens, _ := strconv.Atoi(cp.Generations.Text)
 	mutRate, _ := strconv.ParseFloat(cp.MutationRate.Text, 64)
-	crossoverRate, _ := strconv.ParseFloat(cp.CrossoverRate.Text, 64)
-	numIslands, _ := strconv.Atoi(cp.NumIslands.Text)
-	migrationInterval, _ := strconv.Atoi(cp.MigrationInterval.Text)
+	crossRate, _ := strconv.ParseFloat(cp.CrossoverRate.Text, 64)
+	nIslands, _ := strconv.Atoi(cp.NumIslands.Text)
+	migInt, _ := strconv.Atoi(cp.MigrationInterval.Text)
+	tSize, _ := strconv.Atoi(cp.TournamentSize.Text)
 
 	var model genetic.EvolutionModel
 	switch cp.EvolutionModel.Selected {
@@ -74,37 +88,90 @@ func (cp *ControlsPanel) GetParams() backend.Params {
 		model = genetic.Classic
 	case "Island":
 		model = genetic.Island
+	case "Steady-State":
+		model = genetic.SteadyState
+	case "Memetic":
+		model = genetic.Memetic
 	case "Combined":
 		model = genetic.Combined
+	}
+
+	var cross genetic.CrossoverStrategy
+	switch cp.CrossoverType.Selected {
+	case "Single-point":
+		cross = &genetic.SinglePoint{}
+	case "Two-point":
+		cross = &genetic.TwoPoint{}
+	case "Combined":
+		cross = &genetic.CombinedCrossover{}
+	}
+
+	var mut genetic.MutationStrategy
+	switch cp.MutationType.Selected {
+	case "Classic":
+		mut = &genetic.ClassicMutationStrategy{}
+	case "Island":
+		mut = &genetic.IslandMutationStrategy{}
+	case "Steady-State":
+		mut = &genetic.SteadyStateMutationStrategy{}
+	case "Conflict-Adaptive":
+		mut = &genetic.ConflictAdaptiveMutationStrategy{}
+	case "Augmenting-Path":
+		mut = &genetic.AugmentingPathMutationStrategy{}
+	case "Combined":
+		mut = &genetic.CombinedMutationStrategy{Strategies: []genetic.MutationStrategy{
+			&genetic.ClassicMutationStrategy{}, &genetic.IslandMutationStrategy{},
+		}}
+	}
+
+	var sel genetic.SelectionStrategy
+	switch cp.SelectionType.Selected {
+	case "Tournament":
+		sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
+	case "Roulette":
+		sel = &genetic.RouletteWheelSelectionStrategy{}
+	case "Rank":
+		sel = &genetic.RankSelectionStrategy{}
 	}
 
 	return backend.Params{
 		EvolutionModel:    model,
 		PopulationSize:    popSize,
-		Generations:       generations,
+		Generations:       gens,
 		MutationRate:      mutRate,
-		CrossoverRate:     crossoverRate,
-		NumIslands:        numIslands,
-		MigrationInterval: migrationInterval,
+		CrossoverRate:     crossRate,
+		NumIslands:        nIslands,
+		MigrationInterval: migInt,
+		TournamentSize:    tSize,
+		CrossoverStrategy: cross,
+		MutationStrategy:  mut,
+		SelectionStrategy: sel,
 	}
 }
 
 func (cp *ControlsPanel) Render() fyne.CanvasObject {
-	return container.NewVBox(
-		widget.NewLabel("Модель эволюции:"),
-		cp.EvolutionModel,
-		widget.NewLabel("Размер популяции:"),
-		cp.PopulationSize,
-		widget.NewLabel("Поколения:"),
-		cp.Generations,
-		widget.NewLabel("Вероятность мутации:"),
-		cp.MutationRate,
-		widget.NewLabel("Вероятность кроссовера:"),
-		cp.CrossoverRate,
-		widget.NewLabel("Количество островов:"),
-		cp.NumIslands,
-		widget.NewLabel("Интервал миграции:"),
-		cp.MigrationInterval,
-		container.NewHBox(cp.StartBtn, cp.StopBtn),
+	// Используем Accordion для сворачивания секций
+	acc := widget.NewAccordion(
+		widget.NewAccordionItem("Evolution Model & Basic", container.NewVBox(
+			widget.NewLabel("Evolution Model:"), cp.EvolutionModel,
+		)),
+		widget.NewAccordionItem("Genetic Operators", container.NewVBox(
+			widget.NewLabel("Crossover Type:"), cp.CrossoverType,
+			widget.NewLabel("Mutation Type:"), cp.MutationType,
+			widget.NewLabel("Selection Type:"), cp.SelectionType,
+			widget.NewLabel("Tournament Size:"), cp.TournamentSize,
+		)),
+		widget.NewAccordionItem("Population & Generations", container.NewVBox(
+			widget.NewLabel("Population Size:"), cp.PopulationSize,
+			widget.NewLabel("Crossover Rate:"), cp.CrossoverRate,
+			widget.NewLabel("Mutation Rate:"), cp.MutationRate,
+			widget.NewLabel("Generations:"), cp.Generations,
+		)),
+		widget.NewAccordionItem("Island Parameters", container.NewVBox(
+			widget.NewLabel("Num Islands:"), cp.NumIslands,
+			widget.NewLabel("Migration Interval:"), cp.MigrationInterval,
+		)),
 	)
+	btns := container.NewHBox(cp.StartBtn, cp.StopBtn)
+	return container.NewBorder(nil, btns, nil, nil, acc)
 }

@@ -6,6 +6,8 @@ type EvolutionModel int
 const (
 	Classic EvolutionModel = iota
 	Island
+	SteadyState
+	Memetic
 	Combined
 )
 
@@ -20,22 +22,25 @@ type Graph struct {
 	Edges       []Edge
 }
 
-// Chromosome – хромосома, кодирующая решение в виде булевого среза.
-// Значение true означает, что соответствующее ребро включено в паросочетание.
-type Chromosome struct {
-	Genes   []bool
-	Fitness int
+type Config struct {
+	UseFastRepair    bool
+	UseCachedFitness bool
 }
 
-// GeneticAlgorithm хранит параметры алгоритма и текущее состояние популяции.
-type GeneticAlgorithm struct {
+// Algorithm хранит параметры алгоритма и текущее состояние популяции.
+type Algorithm struct {
 	Graph             *Graph
 	Population        []Chromosome
 	EvolutionModel    EvolutionModel
+	CrossoverStrategy CrossoverStrategy
+	SelectionStrategy ElitismWrapper
+	MutationStrategy  MutationStrategy
 	PopulationSize    int
 	Generations       int
 	MutationRate      float64
 	CrossoverRate     float64
-	NumIslands        int // для островной модели
-	MigrationInterval int // число поколений между миграциями
+	NumIslands        int // Для островной модели
+	MigrationInterval int // Число поколений между миграциями
+
+	bestSoFar Chromosome // Лучшая хромосома за всё время
 }
