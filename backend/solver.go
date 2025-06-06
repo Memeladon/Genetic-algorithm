@@ -2,11 +2,13 @@ package backend
 
 import (
 	"Genetic-algorithm/backend/genetic"
-	"fmt"
-	"github.com/fatih/color"
 	"log"
+	"time"
+
+	"github.com/fatih/color"
 )
 
+// Params содержит параметры для запуска генетического алгоритма
 type Params struct {
 	EvolutionModel    genetic.EvolutionModel
 	CrossoverStrategy genetic.CrossoverStrategy
@@ -18,19 +20,68 @@ type Params struct {
 	CrossoverRate     float64
 	NumIslands        int
 	MigrationInterval int
-	TournamentSize    int // Новый параметр для турнирной селекции
+	TournamentSize    int            // Новый параметр для турнирной селекции
+	Config            genetic.Config // Конфигурация генетического алгоритма
 }
 
+// ExperimentResult содержит результаты одного эксперимента
+type ExperimentResult struct {
+	GraphName           string
+	Algorithm           string
+	GraphVertices       int
+	GraphEdges          int
+	TimeTaken           time.Duration
+	BestFitness         int
+	AverageFitness      float64
+	FitnessHistory      []int
+	BestMatchingEdges   []int  // Индексы рёбер в наибольшем допустимом паросочетании
+	BestChromosomeGenes []bool // Гены лучшей хромосомы
+}
+
+// GASolver представляет решатель задачи о максимальном паросочетании
 type GASolver struct {
+	Graph        *genetic.Graph
+	Params       Params
+	StopChan     chan struct{}
+	Done         chan struct{}
 	GA           *genetic.Algorithm
 	IsRunning    bool
 	BestSolution genetic.Chromosome
 	UpdateChan   chan genetic.Chromosome
+	Results      []ExperimentResult
 }
 
-func (s *GASolver) Start(graph genetic.Graph, params Params) {
+// NewGASolver создаёт новый экземпляр решателя
+func NewGASolver(graph *genetic.Graph, params Params) *GASolver {
+	return &GASolver{
+		Graph:    graph,
+		Params:   params,
+		StopChan: make(chan struct{}),
+		Done:     make(chan struct{}),
+	}
+}
+
+func (s *GASolver) Start(graph genetic.Graph, params Params, graphName string) {
 	s.IsRunning = true
+	s.Done = make(chan struct{}) // Create new done channel
+	startTime := time.Now()
+
+	// Инициализация результата
+	result := ExperimentResult{
+		GraphName:      graphName,
+		Algorithm:      params.EvolutionModel.String(),
+		GraphVertices:  graph.NumVertices,
+		GraphEdges:     len(graph.Edges),
+		FitnessHistory: make([]int, 0, params.Generations),
+	}
+
 	go func() {
+		defer func() {
+			s.IsRunning = false
+			close(s.UpdateChan) // Close update channel first
+			close(s.Done)       // Then signal completion
+		}()
+
 		ga, err := genetic.NewGeneticAlgorithm(
 			&graph,
 			params.EvolutionModel,
@@ -46,101 +97,166 @@ func (s *GASolver) Start(graph genetic.Graph, params Params) {
 		)
 		if err != nil {
 			log.Println(err)
-			s.IsRunning = false
 			return
 		}
 
-		// Безопасно пытаемся вычислить MaxMatching, ловя панику
+		// Log algorithm start
+		ga.Logger.LogAlgorithmStart(ga)
+
+		// Вычисление условия остановки работы
 		var target int
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					color.Yellow("MaxMatching failed (%v), disabling early stop", r)
+					color.Yellow("MaxMatchingGreed failed (%v), disabling early stop", r)
 					target = 0
 				}
 			}()
-			target = genetic.MaxMatching(ga.Graph)
+			target = genetic.MaxMatchingGreed(ga.Graph)
 		}()
+
+		// Log target
 		if target > 0 {
-			color.Cyan("Target (max matching) = %d", target)
+			ga.Logger.LogMilestone("Target (max matching) = %d", target)
 		} else {
-			color.Yellow("Target unknown or error, running all %d generations", ga.Generations)
+			ga.Logger.LogWarning("Target unknown or error, running all %d generations", ga.Generations)
 		}
 
 		// Инициализация популяции
 		ga.InitializePopulation()
-		color.Cyan("Start GA: model=%v, popSize=%d, gens=%d",
-			ga.EvolutionModel, ga.PopulationSize, ga.Generations)
+		ga.Logger.LogInfo("Start GA: model=%v, popSize=%d, gens=%d",
+			ga.EvolutionModel.GetModelName(), ga.PopulationSize, ga.Generations)
 
 		// Первое обновление
 		best := ga.GetBestChromosome()
-		color.Green("Initial best fitness: %d", best.Fitness)
+		// initBestValid := countValidMatchingEdges(best, ga.Graph)
+		// ga.Logger.LogSuccess("Initial best matching: %d", initBestValid)
 		s.UpdateChan <- best
 
 		// Основной цикл
 		for gen := 1; gen <= ga.Generations && s.IsRunning; gen++ {
-			switch ga.EvolutionModel {
-			case genetic.Island:
-				color.Magenta("Island model: islands=%d, interval=%d",
-					ga.NumIslands, ga.MigrationInterval)
-				islands := ga.DistributePopulation()
-				for i := range islands {
-					islands[i] = ga.EvolveIsland(islands[i])
-				}
-				if gen%ga.MigrationInterval == 0 {
-					islands = genetic.MigrateIslands(islands)
-					color.Blue(" Migration at gen %d", gen)
-				}
-				ga.Population = genetic.MergeIslands(islands)
-
-			case genetic.SteadyState:
-				p1 := ga.SelectionStrategy.Strategy.Select(ga.Population)
-				p2 := ga.SelectionStrategy.Strategy.Select(ga.Population)
-				child := ga.CrossoverStrategy.Crossover(p1, p2)
-				ga.MutationStrategy.Mutate(&child, ga.MutationRate, ga.Graph)
-				genetic.RepairFast(&child, ga.Graph)
-				genetic.Evaluate(&child, ga.Graph)
-				// замена худшей
-				worst := 0
-				for i, c := range ga.Population {
-					if c.Fitness < ga.Population[worst].Fitness {
-						worst = i
-					}
-				}
-				if child.Fitness > ga.Population[worst].Fitness {
-					ga.Population[worst] = child
-				}
-
-			case genetic.Memetic:
-				fmt.Println("Running Memetic GA")
-				ga.RunMemetic()
-
-			default: // Classic и Combined
-				ga.EvolvePopulation()
+			ga.CurrentGeneration = gen
+			// Evolve population using the selected model strategy
+			if err := ga.EvolutionModel.Evolve(ga); err != nil {
+				log.Printf("Error in evolution: %v", err)
+				break
 			}
 
 			// Лог и обновление лучшего
 			current := ga.GetBestChromosome()
-			color.Yellow("Gen %d best fitness: %d", gen, current.Fitness)
-			if current.Fitness > best.Fitness {
-				best = current
-				color.Green(" New global best: %d", best.Fitness)
+			ga.SetLocalBest(current)
+			if ga.LocalBestEdges > ga.BestSoFarEdges {
+				genetic.RepairFast(&current, ga.Graph)
+				genetic.Evaluate(&current, ga.Graph)
+				ga.SetBestSoFar(current)
+				ga.Logger.LogMilestone("Найдено новое лучшее паросочетание: %d рёбер (поколение %d)", ga.BestSoFarEdges, ga.CurrentGeneration)
 			}
+			best = current
 			s.UpdateChan <- best
+			result.FitnessHistory = append(result.FitnessHistory, ga.BestSoFarEdges)
 
 			// Досрочный выход
-			if target > 0 && best.Fitness >= target {
-				color.Green("Reached optimal at gen %d", gen)
+			if target > 0 && ga.BestSoFarEdges >= target {
+				ga.Logger.LogSuccess("Reached optimal at gen %d", gen)
 				break
 			}
+
 		}
 
-		color.Cyan("GA finished. Best fitness = %d", best.Fitness)
-		s.BestSolution = best
-		s.IsRunning = false
+		finalBest := ga.GetBestSoFar()
+		finalBestValid := countValidMatchingEdges(finalBest, ga.Graph)
+		ga.Logger.LogSuccess("GA finished. Best matching = %d", finalBestValid)
+
+		// Фиксируем результаты
+		result.TimeTaken = time.Since(startTime)
+		result.BestFitness = finalBestValid
+		// Сохраняем индексы рёбер наибольшего паросочетания из глобального bestSoFar
+		globalBest := ga.GetBestSoFar()
+		result.BestMatchingEdges = getValidMatchingEdges(globalBest, ga.Graph)
+		result.BestChromosomeGenes = make([]bool, len(globalBest.Genes))
+		copy(result.BestChromosomeGenes, globalBest.Genes)
+		s.Results = append(s.Results, result)
+
+		s.BestSolution = finalBest
 	}()
 }
 
 func (s *GASolver) Stop() {
 	s.IsRunning = false
+	<-s.Done // Wait for completion
+}
+
+func (s *GASolver) Run() error {
+	ga, err := genetic.NewGeneticAlgorithm(
+		s.Graph,
+		s.Params.EvolutionModel,
+		s.Params.CrossoverStrategy,
+		s.Params.SelectionStrategy,
+		s.Params.MutationStrategy,
+		s.Params.PopulationSize,
+		s.Params.Generations,
+		s.Params.MutationRate,
+		s.Params.CrossoverRate,
+		s.Params.NumIslands,
+		s.Params.MigrationInterval,
+	)
+	if err != nil {
+		return err
+	}
+
+	ga.Logger.LogAlgorithmStart(ga)
+
+	ga.InitializePopulation()
+
+	// Main evolution loop
+	for !ga.ShouldTerminate() {
+		select {
+		case <-s.StopChan:
+			ga.Logger.LogWarning("Алгоритм остановлен пользователем")
+			return nil
+		default:
+			if err := ga.EvolutionModel.Evolve(ga); err != nil {
+				ga.Logger.LogError(err)
+				return err
+			}
+		}
+	}
+
+	// Log completion
+	ga.Logger.LogCompletion(ga)
+	return nil
+}
+
+// getValidMatchingEdges возвращает индексы рёбер в допустимом паросочетании для данной хромосомы
+func getValidMatchingEdges(chrom genetic.Chromosome, graph *genetic.Graph) []int {
+	used := make(map[int]bool)
+	var indices []int
+	for i, gene := range chrom.Genes {
+		if gene {
+			edge := graph.Edges[i]
+			if !used[edge.U] && !used[edge.V] {
+				used[edge.U] = true
+				used[edge.V] = true
+				indices = append(indices, i)
+			}
+		}
+	}
+	return indices
+}
+
+// countValidMatchingEdges возвращает количество рёбер в допустимом паросочетании для данной хромосомы
+func countValidMatchingEdges(chrom genetic.Chromosome, graph *genetic.Graph) int {
+	used := make(map[int]bool)
+	count := 0
+	for i, gene := range chrom.Genes {
+		if gene {
+			edge := graph.Edges[i]
+			if !used[edge.U] && !used[edge.V] {
+				used[edge.U] = true
+				used[edge.V] = true
+				count++
+			}
+		}
+	}
+	return count
 }

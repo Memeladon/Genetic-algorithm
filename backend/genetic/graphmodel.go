@@ -11,8 +11,7 @@ type Point2D struct {
 	X, Y float64
 }
 
-// GraphModel представляет модель неориентированного графа
-// с явными позициями и списком рёбер.
+// GraphModel представляет модель неориентированного графа с явными позициями и списком рёбер.
 type GraphModel struct {
 	NumVertices int
 	Edges       []Edge
@@ -61,10 +60,10 @@ func PredefinedGraphs() map[string]*GraphModel {
 	}
 	// Позиции вершин правильного тетраэдра (вид сверху на треугольную пирамиду)
 	k4.Positions = []Point2D{
-		{300, 100},
-		{200, 300},
-		{400, 300},
-		{300, 200},
+		{300, 100}, // top
+		{200, 300}, // left
+		{400, 300}, // right
+		{300, 220}, // center
 	}
 	graphs["Tetrahedron (4)"] = k4
 
@@ -80,15 +79,15 @@ func PredefinedGraphs() map[string]*GraphModel {
 			}
 		}
 	}
-	cube.Positions = make([]Point2D, 8)
-	for i := 0; i < 8; i++ {
-		x3 := (1 - 2*float64((i>>0)&1))
-		y3 := (1 - 2*float64((i>>1)&1))
-		z3 := (1 - 2*float64((i>>2)&1))
-		cube.Positions[i] = Point2D{
-			X: 300 + 100*x3 + 50*z3,
-			Y: 250 + 100*y3 + 50*z3,
-		}
+	cube.Positions = []Point2D{
+		{200, 100}, // top-left
+		{400, 100}, // top-right
+		{200, 300}, // bottom-left
+		{400, 300}, // bottom-right
+		{250, 150}, // inner top-left
+		{350, 150}, // inner top-right
+		{250, 250}, // inner bottom-left
+		{350, 250}, // inner bottom-right
 	}
 	graphs["Cube (8)"] = cube
 
@@ -104,98 +103,171 @@ func PredefinedGraphs() map[string]*GraphModel {
 			}
 		}
 	}
+	// Two triangles, one inverted over the other
 	oct.Positions = []Point2D{
-		{300, 100}, {150, 250}, {300, 400},
-		{450, 250}, {300, 50}, {300, 450},
+		{300, 100}, // top
+		{200, 250}, // left
+		{400, 250}, // right
+		{250, 350}, // bottom left
+		{350, 350}, // bottom right
+		{300, 220}, // center
 	}
 	graphs["Octahedron (6)"] = oct
 
 	//
-	// 4) Icosahedron (12)
+	// 4) Icosahedron (12) — Schlegel diagram, 1:1 with reference image
 	//
 	{
-		phi := (1 + math.Sqrt(5)) / 2
-		pts := [][3]float64{
-			{0, 1, phi}, {0, -1, phi}, {0, 1, -phi}, {0, -1, -phi},
-			{1, phi, 0}, {-1, phi, 0}, {1, -phi, 0}, {-1, -phi, 0},
-			{phi, 0, 1}, {-phi, 0, 1}, {phi, 0, -1}, {-phi, 0, -1},
-		}
 		ico := NewGraphModel(12)
-		// строим рёбра по расстоянию
-		minD := math.Inf(1)
-		for i := 0; i < 12; i++ {
-			for j := i + 1; j < 12; j++ {
-				d := dist2(pts[i], pts[j])
-				if d > 1e-6 && d < minD {
-					minD = d
-				}
+		// Node positions: top, outer pentagon, inner pentagon, center
+		cx, cy := 300.0, 250.0
+		R_outer := 170.0
+		R_inner := 90.0
+		// Top node
+		ico.Positions[0] = Point2D{cx, cy - 210}
+		// Outer pentagon (1-5)
+		angles := []float64{-math.Pi / 2, -math.Pi/2 + 2*math.Pi/5, -math.Pi/2 + 4*math.Pi/5, -math.Pi/2 + 6*math.Pi/5, -math.Pi/2 + 8*math.Pi/5}
+		for i := 0; i < 5; i++ {
+			ico.Positions[1+i] = Point2D{
+				X: cx + R_outer*math.Cos(angles[i]),
+				Y: cy + R_outer*math.Sin(angles[i]),
 			}
 		}
-		thr := minD * 1.01
-		for i := 0; i < 12; i++ {
-			for j := i + 1; j < 12; j++ {
-				if dist2(pts[i], pts[j]) < thr {
-					ico.AddEdge(i, j)
-				}
+		// Inner pentagon (6-10)
+		for i := 0; i < 5; i++ {
+			ico.Positions[6+i] = Point2D{
+				X: cx + R_inner*math.Cos(angles[i]),
+				Y: cy + R_inner*math.Sin(angles[i]),
 			}
 		}
-		ico.Positions = make([]Point2D, 12)
-		for i, p := range pts {
-			ico.Positions[i] = Point2D{
-				X: 300 + p[0]*80,
-				Y: 250 + p[1]*80,
-			}
-		}
+		// Center node (11)
+		ico.Positions[11] = Point2D{cx, cy}
+		// Edges as in the reference image (0-based)
+		// Top node to all outer pentagon
+		ico.AddEdge(0, 1)
+		ico.AddEdge(0, 2)
+		ico.AddEdge(0, 3)
+		ico.AddEdge(0, 4)
+		ico.AddEdge(0, 5)
+		// Outer pentagon
+		ico.AddEdge(1, 2)
+		ico.AddEdge(2, 3)
+		ico.AddEdge(3, 4)
+		ico.AddEdge(4, 5)
+		ico.AddEdge(5, 1)
+		// Outer to inner pentagon spokes
+		ico.AddEdge(1, 6)
+		ico.AddEdge(2, 7)
+		ico.AddEdge(3, 8)
+		ico.AddEdge(4, 9)
+		ico.AddEdge(5, 10)
+		// Inner pentagon
+		ico.AddEdge(6, 7)
+		ico.AddEdge(7, 8)
+		ico.AddEdge(8, 9)
+		ico.AddEdge(9, 10)
+		ico.AddEdge(10, 6)
+		// Inner pentagon to center
+		ico.AddEdge(6, 11)
+		ico.AddEdge(7, 11)
+		ico.AddEdge(8, 11)
+		ico.AddEdge(9, 11)
+		ico.AddEdge(10, 11)
+		// Star/diagonal connections
+		ico.AddEdge(1, 8)
+		ico.AddEdge(2, 9)
+		ico.AddEdge(3, 10)
+		ico.AddEdge(4, 6)
+		ico.AddEdge(5, 7)
 		graphs["Icosahedron (12)"] = ico
 	}
 
 	//
-	// 5) Dodecahedron (20)
+	// 5) Dodecahedron (20) — Schlegel diagram, 1:1 with reference image
 	//
 	{
-		phi := (1 + math.Sqrt(5)) / 2
-		inv := 1.0 / phi
-		pts := make([][3]float64, 0, 20)
-		// куб: ±1,±1,±1
-		for sx := -1.0; sx <= 1; sx += 2 {
-			for sy := -1.0; sy <= 1; sy += 2 {
-				for sz := -1.0; sz <= 1; sz += 2 {
-					pts = append(pts, [3]float64{sx, sy, sz})
-				}
-			}
-		}
-		// остальные
-		extra := [][3]float64{
-			{0, inv, phi}, {0, -inv, phi}, {0, inv, -phi}, {0, -inv, -phi},
-			{inv, phi, 0}, {-inv, phi, 0}, {inv, -phi, 0}, {-inv, -phi, 0},
-			{phi, 0, inv}, {-phi, 0, inv}, {phi, 0, -inv}, {-phi, 0, -inv},
-		}
-		pts = append(pts, extra...)
 		dod := NewGraphModel(20)
-		// рёбра по минимальному расстоянию
-		minD := math.Inf(1)
-		for i := range pts {
-			for j := i + 1; j < len(pts); j++ {
-				if d := dist2(pts[i], pts[j]); d > 1e-6 && d < minD {
-					minD = d
-				}
-			}
-		}
-		thr := minD * 1.01
-		for i := range pts {
-			for j := i + 1; j < len(pts); j++ {
-				if dist2(pts[i], pts[j]) < thr {
-					dod.AddEdge(i, j)
-				}
-			}
-		}
-		dod.Positions = make([]Point2D, 20)
-		for i, p := range pts {
+		// Node positions: 4 concentric pentagons, but order matches the image
+		cx, cy := 300.0, 250.0
+		radii := []float64{170, 130, 90, 50}
+		angles := []float64{-math.Pi / 2, -math.Pi/2 + 2*math.Pi/5, -math.Pi/2 + 4*math.Pi/5, -math.Pi/2 + 6*math.Pi/5, -math.Pi/2 + 8*math.Pi/5}
+		// Outer pentagon (1-5)
+		for i := 0; i < 5; i++ {
 			dod.Positions[i] = Point2D{
-				X: 300 + p[0]*60,
-				Y: 250 + p[1]*60,
+				X: cx + radii[0]*math.Cos(angles[i]),
+				Y: cy + radii[0]*math.Sin(angles[i]),
 			}
 		}
+		// 2nd pentagon (6-10)
+		for i := 0; i < 5; i++ {
+			dod.Positions[5+i] = Point2D{
+				X: cx + radii[1]*math.Cos(angles[i]),
+				Y: cy + radii[1]*math.Sin(angles[i]),
+			}
+		}
+		// 3rd pentagon (11-15)
+		for i := 0; i < 5; i++ {
+			dod.Positions[10+i] = Point2D{
+				X: cx + radii[2]*math.Cos(angles[i]),
+				Y: cy + radii[2]*math.Sin(angles[i]),
+			}
+		}
+		// innermost pentagon (16-20)
+		for i := 0; i < 5; i++ {
+			dod.Positions[15+i] = Point2D{
+				X: cx + radii[3]*math.Cos(angles[i]),
+				Y: cy + radii[3]*math.Sin(angles[i]),
+			}
+		}
+		// Edges as in the image (0-based)
+		// Outer pentagon
+		dod.AddEdge(0, 1)
+		dod.AddEdge(1, 2)
+		dod.AddEdge(2, 3)
+		dod.AddEdge(3, 4)
+		dod.AddEdge(4, 0)
+		// Spokes
+		dod.AddEdge(0, 5)
+		dod.AddEdge(1, 6)
+		dod.AddEdge(2, 7)
+		dod.AddEdge(3, 8)
+		dod.AddEdge(4, 9)
+		// 2nd pentagon
+		dod.AddEdge(5, 6)
+		dod.AddEdge(6, 7)
+		dod.AddEdge(7, 8)
+		dod.AddEdge(8, 9)
+		dod.AddEdge(9, 5)
+		// Spokes
+		dod.AddEdge(5, 10)
+		dod.AddEdge(6, 11)
+		dod.AddEdge(7, 12)
+		dod.AddEdge(8, 13)
+		dod.AddEdge(9, 14)
+		// 3rd pentagon
+		dod.AddEdge(10, 11)
+		dod.AddEdge(11, 12)
+		dod.AddEdge(12, 13)
+		dod.AddEdge(13, 14)
+		dod.AddEdge(14, 10)
+		// Spokes
+		dod.AddEdge(10, 15)
+		dod.AddEdge(11, 16)
+		dod.AddEdge(12, 17)
+		dod.AddEdge(13, 18)
+		dod.AddEdge(14, 19)
+		// innermost pentagon
+		dod.AddEdge(15, 16)
+		dod.AddEdge(16, 17)
+		dod.AddEdge(17, 18)
+		dod.AddEdge(18, 19)
+		dod.AddEdge(19, 15)
+		// Center cross connections (as in the image)
+		dod.AddEdge(15, 17)
+		dod.AddEdge(17, 19)
+		dod.AddEdge(19, 16)
+		dod.AddEdge(16, 18)
+		dod.AddEdge(18, 15)
 		graphs["Dodecahedron (20)"] = dod
 	}
 

@@ -5,10 +5,6 @@ import (
 	"math/rand"
 )
 
-type MutationStrategy interface {
-	Mutate(chrom *Chromosome, rate float64, graph *Graph)
-}
-
 // -------------------------------- Classic Mutation -------------------------------- //
 
 type ClassicMutationStrategy struct{}
@@ -19,6 +15,10 @@ func (s *ClassicMutationStrategy) Mutate(chrom *Chromosome, rate float64, _ *Gra
 			chrom.Genes[i] = !chrom.Genes[i]
 		}
 	}
+}
+
+func (s *ClassicMutationStrategy) GetName() string {
+	return "Classic"
 }
 
 // -------------------------------- Island Mutation -------------------------------- //
@@ -47,17 +47,24 @@ func (s *IslandMutationStrategy) Mutate(chrom *Chromosome, rate float64, graph *
 	}
 }
 
+func (s *IslandMutationStrategy) GetName() string {
+	return "Island"
+}
+
 // --------------------------- Steady-State Mutation --------------------------- //
 
 type SteadyStateMutationStrategy struct{}
 
 func (s *SteadyStateMutationStrategy) Mutate(chrom *Chromosome, rate float64, graph *Graph) {
-	// Стандартная классическая мутация
 	for i := range chrom.Genes {
 		if rand.Float64() < rate {
 			chrom.Genes[i] = !chrom.Genes[i]
 		}
 	}
+}
+
+func (s *SteadyStateMutationStrategy) GetName() string {
+	return "SteadyState"
 }
 
 // ----------------- Conflict-Adaptive Mutation ----------------- //
@@ -104,6 +111,10 @@ func (s *ConflictAdaptiveMutationStrategy) Mutate(chrom *Chromosome, rate float6
 	// После мутации восстанавливаем допустимость
 	RepairFast(chrom, graph)
 	Evaluate(chrom, graph)
+}
+
+func (s *ConflictAdaptiveMutationStrategy) GetName() string {
+	return "ConflictAdaptive"
 }
 
 // ----------------- Augmenting-Path Mutation ----------------- //
@@ -210,6 +221,10 @@ func matchedVertex(v int, chrom *Chromosome, graph *Graph) bool {
 	return false
 }
 
+func (s *AugmentingPathMutationStrategy) GetName() string {
+	return "AugmentingPath"
+}
+
 // ------------------------------- Combined Mutation ------------------------------- //
 
 type CombinedMutationStrategy struct {
@@ -220,4 +235,8 @@ func (s *CombinedMutationStrategy) Mutate(chrom *Chromosome, rate float64, graph
 	for _, strategy := range s.Strategies {
 		strategy.Mutate(chrom, rate, graph)
 	}
+}
+
+func (s *CombinedMutationStrategy) GetName() string {
+	return "Combined"
 }

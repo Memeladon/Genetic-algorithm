@@ -2,12 +2,14 @@ package frontend
 
 import (
 	"Genetic-algorithm/backend/genetic"
+	"image/color"
+	"log"
+	"strconv"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"image/color"
-	"strconv"
 )
 
 type GraphWidget struct {
@@ -85,6 +87,22 @@ func (gw *GraphWidget) updateEdgeColors(chrom genetic.Chromosome) {
 		if idx < len(chrom.Genes) && chrom.Genes[idx] {
 			line.StrokeColor = color.NRGBA{R: 255, G: 80, B: 80, A: 255}
 		} else {
+			line.StrokeColor = color.NRGBA{R: 180, G: 180, B: 180, A: 255}
+		}
+		line.Refresh()
+	}
+}
+
+// updateEdgeColorsBestOnly подсвечивает только рёбра из bestIndices (тёмно-зелёным), остальные — серым
+func (gw *GraphWidget) updateEdgeColorsBestOnly(bestIndices map[int]struct{}) {
+	log.Printf("updateEdgeColorsBestOnly: edges=%d, bestIndices=%d", len(gw.edges), len(bestIndices))
+	for idx, line := range gw.edges {
+		if _, ok := bestIndices[idx]; ok {
+			// Best matching: dark green
+			line.StrokeColor = color.NRGBA{R: 255, G: 80, B: 80, A: 255}
+			// line.StrokeColor = color.NRGBA{R: 0, G: 100, B: 0, A: 255}
+		} else {
+			// Default: gray
 			line.StrokeColor = color.NRGBA{R: 180, G: 180, B: 180, A: 255}
 		}
 		line.Refresh()

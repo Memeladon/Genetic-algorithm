@@ -4,15 +4,6 @@ import (
 	"math/rand"
 )
 
-type CrossoverStrategy interface {
-	Crossover(parent1, parent2 Chromosome) Chromosome
-	WithRate(rate float64) CrossoverStrategy // Для управления вероятностью
-}
-
-//func (ga *Algorithm) performCrossover(p1, p2 Chromosome) Chromosome {
-//	return ga.CrossoverStrategy.Crossover(p1, p2)
-//}
-
 // ---------------------- Классический одноточечный кроссовер ---------------------- //
 
 type SinglePoint struct {
@@ -35,6 +26,10 @@ func (s *SinglePoint) Crossover(p1, p2 Chromosome) Chromosome {
 func (s *SinglePoint) WithRate(rate float64) CrossoverStrategy {
 	s.rate = rate
 	return s
+}
+
+func (c *SinglePoint) GetName() string {
+	return "SinglePoint"
 }
 
 // ------------------------ Островной двухточечный кроссовер ------------------------ //
@@ -67,6 +62,10 @@ func (s *TwoPoint) WithRate(rate float64) CrossoverStrategy {
 	return s
 }
 
+func (c *TwoPoint) GetName() string {
+	return "TwoPoint"
+}
+
 // ---------------------- Комбинированная стратегия кроссовера ---------------------- //
 
 type CombinedCrossover struct {
@@ -86,4 +85,8 @@ func (s *CombinedCrossover) Crossover(p1, p2 Chromosome) Chromosome {
 func (s *CombinedCrossover) WithRate(rate float64) CrossoverStrategy {
 	s.rate = rate
 	return s
+}
+
+func (c *CombinedCrossover) GetName() string {
+	return "Combined"
 }

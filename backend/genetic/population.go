@@ -11,16 +11,6 @@ type Chromosome struct {
 	Fitness int
 }
 
-func (ga *Algorithm) PerformInitializePopulation() [][]Chromosome {
-	switch ga.EvolutionModel {
-	case Classic:
-		ga.InitializePopulation()
-	case Island:
-		return ga.InitializeIslands()
-	}
-	return nil
-}
-
 // InitializePopulation генерирует начальную популяцию
 func (ga *Algorithm) InitializePopulation() {
 	ga.Population = make([]Chromosome, ga.PopulationSize)
@@ -73,9 +63,19 @@ func (ga *Algorithm) GetIslandBest(island []Chromosome) Chromosome {
 	return best
 }
 
-// SetBestSoFar обновляет лучшее решение
+// SetBestSoFar обновляет лучшее решение за всё время
 func (ga *Algorithm) SetBestSoFar(chrom Chromosome) {
-	ga.bestSoFar = chrom
+	edges := countValidMatchingEdges(chrom, ga.Graph)
+	if edges > ga.BestSoFarEdges {
+		ga.bestSoFar = chrom
+		ga.BestSoFarEdges = edges
+	}
+}
+
+// SetLocalBest обновляет лучший результат в текущей популяции
+func (ga *Algorithm) SetLocalBest(chrom Chromosome) {
+	ga.localBest = chrom
+	ga.LocalBestEdges = countValidMatchingEdges(chrom, ga.Graph)
 }
 
 // GetBestSoFar возвращает глобально лучшее решение

@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-// chromosomeKey формирует строковое представление хромосомы для устранения дубликатов.
+// chromosomeKey формирует строковое представление хромосомы для устранения дубликатов
+// Используется для быстрого сравнения хромосом и поиска уникальных особей
 func chromosomeKey(chrom Chromosome) string {
 	var sb strings.Builder
 	for _, gene := range chrom.Genes {
@@ -20,6 +21,8 @@ func chromosomeKey(chrom Chromosome) string {
 }
 
 // Evaluate вычисляет реальный размер паросочетания
+// Проверяет каждое включенное ребро на конфликты с уже использованными вершинами
+// Возвращает количество рёбер в допустимом паросочетании
 func Evaluate(chrom *Chromosome, graph *Graph) {
 	used := make(map[int]bool)
 	count := 0
@@ -39,7 +42,9 @@ func Evaluate(chrom *Chromosome, graph *Graph) {
 	chrom.Fitness = count
 }
 
-// EvaluateFast вычисляет функцию приспособленности – число ребер в допустимом паросочетании.
+// EvaluateFast вычисляет приближенную функцию приспособленности
+// Просто считает количество включенных рёбер без проверки на конфликты
+// Работает быстрее, но может давать некорректные результаты для недопустимых решений
 func EvaluateFast(chrom *Chromosome, graph *Graph) {
 	count := 0
 	for _, gene := range chrom.Genes {
@@ -50,7 +55,9 @@ func EvaluateFast(chrom *Chromosome, graph *Graph) {
 	chrom.Fitness = count
 }
 
-// Repair приводит хромосому к допустимому виду: удаляет ребра, нарушающие условие (общая вершина).
+// Repair приводит хромосому к допустимому виду
+// Удаляет рёбра, нарушающие условие паросочетания (общая вершина)
+// Обрабатывает рёбра в случайном порядке для увеличения разнообразия
 func Repair(chrom *Chromosome, graph *Graph) {
 	used := make(map[int]bool)
 	indices := make([]int, len(graph.Edges))
@@ -75,6 +82,8 @@ func Repair(chrom *Chromosome, graph *Graph) {
 }
 
 // RepairFast детерминированная версия Repair
+// Обрабатывает рёбра в фиксированном порядке
+// Гарантирует одинаковый результат при одинаковых входных данных
 func RepairFast(chrom *Chromosome, graph *Graph) {
 	used := make(map[int]bool)
 
@@ -91,7 +100,7 @@ func RepairFast(chrom *Chromosome, graph *Graph) {
 	}
 
 	// Пересчитываем фитнес
-	Evaluate(chrom, graph)
+	//Evaluate(chrom, graph)
 	//EvaluateFast(chrom, graph)
 }
 
@@ -107,8 +116,9 @@ func (ga *Algorithm) getElitesFromIsland(island []Chromosome, n int) []Chromosom
 	return sorted[:n]
 }
 
-// ApplyAugmentingPath пытается найти одну увеличивающую цепь и «флипает» по ней.
-// Если цепь не найдена — не меняет chrom.Genes.
+// ApplyAugmentingPath пытается найти одну увеличивающую цепь и "флипает" по ней
+// Используется для локального улучшения решения
+// Если цепь не найдена — не меняет chrom.Genes
 func ApplyAugmentingPath(genes []bool, graph *Graph) {
 	// Строим хромосому-времянку
 	chrom := Chromosome{Genes: make([]bool, len(genes))}
@@ -121,24 +131,27 @@ func ApplyAugmentingPath(genes []bool, graph *Graph) {
 	copy(genes, chrom.Genes)
 }
 
-// MaxMatchingOld возвращает размер наибольшего паросочетания в неориентированном графе.
+// MaxMatchingOld возвращает размер наибольшего паросочетания в неориентированном графе
+// Реализует алгоритм Эдмондса с использованием "цветков" (blossoms)
+// Используется как эталонное решение для сравнения
 func MaxMatchingOld(graph *Graph) int {
 	n := graph.NumVertices
-	// match[v] = u, если v спарен с u, или -1
+	// match[v] = u, если v спарен с u, или -1 если вершина свободна
 	match := make([]int, n)
 	// parent[v] = w, откуда мы пришли в v при BFS
 	parent := make([]int, n)
-	// base[v] = базовая вершина текущего «цветка» (blossom)
+	// base[v] = базовая вершина текущего "цветка" (blossom)
 	base := make([]int, n)
-	inQueue := make([]bool, n)
-	inPath := make([]bool, n)
+	inQueue := make([]bool, n) // Вершины в очереди BFS
+	inPath := make([]bool, n)  // Вершины в текущем пути
 
+	// Инициализация: все вершины свободны и являются базовыми
 	for i := 0; i < n; i++ {
 		match[i] = -1
 		base[i] = i
 	}
 
-	// строим матрицу смежности для быстрого доступа
+	// Строим матрицу смежности для быстрого доступа
 	adj := make([][]bool, n)
 	for i := range adj {
 		adj[i] = make([]bool, n)
@@ -148,7 +161,8 @@ func MaxMatchingOld(graph *Graph) int {
 		adj[e.V][e.U] = true
 	}
 
-	// findBase спускается по base[], сняв метки inPath, чтобы найти представителя
+	// findBase находит базовую вершину "цветка"
+	// Спускается по цепочке base[] до корня
 	findBase := func(v int) int {
 		for base[v] != v {
 			v = base[v]
@@ -156,7 +170,8 @@ func MaxMatchingOld(graph *Graph) int {
 		return v
 	}
 
-	// augmentPath безопасно флипает пары вдоль найденного пути
+	// augmentPath увеличивает паросочетание вдоль найденного пути
+	// Безопасно переключает пары вершин вдоль пути
 	augmentPath := func(u, v int) {
 		for {
 			prevU := match[u]
@@ -165,15 +180,15 @@ func MaxMatchingOld(graph *Graph) int {
 			if prevU < 0 {
 				break
 			}
-			// v ← parent[prevU], если он определён
 			nextV := parent[prevU]
 			u, v = prevU, nextV
 		}
 	}
 
-	// bfs ищет увеличивающий путь от start, возвращает true, если найден
+	// bfs ищет увеличивающий путь от start
+	// Возвращает true, если путь найден
 	bfs := func(start int) bool {
-		// подготовка
+		// Подготовка к BFS
 		for i := 0; i < n; i++ {
 			parent[i] = -1
 			inQueue[i] = false
@@ -187,13 +202,17 @@ func MaxMatchingOld(graph *Graph) int {
 		for qi := 0; qi < len(queue); qi++ {
 			u := queue[qi]
 			for v := 0; v < n; v++ {
-				// смежное и не в том же базовом blossom и не пытка самого себя
+				// Пропускаем если:
+				// 1. Нет ребра
+				// 2. Вершины в одном "цветке"
+				// 3. Вершины уже спарены
 				if !adj[u][v] || base[u] == base[v] || match[u] == v {
 					continue
 				}
-				// если обнаружен новый цветок
+
+				// Если вершина v уже посещена - нашли "цветок"
 				if parent[v] != -1 {
-					// поиск LCA (наименьшая общая база)
+					// Ищем LCA (наименьший общий предок)
 					x, y := u, v
 					pathMark := make(map[int]bool)
 					for {
@@ -214,8 +233,8 @@ func MaxMatchingOld(graph *Graph) int {
 						}
 						y = parent[match[y]]
 					}
+					// Сжимаем "цветок"
 					blossomBase := findBase(y)
-					// помечаем все вершины цвета
 					for i := 0; i < n; i++ {
 						if pathMark[findBase(i)] {
 							base[i] = blossomBase
@@ -224,7 +243,7 @@ func MaxMatchingOld(graph *Graph) int {
 							inPath[i] = true
 						}
 					}
-					// повторно добавляем в очередь все вершины blossom
+					// Добавляем вершины "цветка" в очередь
 					for i := 0; i < n; i++ {
 						if inPath[findBase(i)] && !inQueue[i] {
 							inQueue[i] = true
@@ -232,14 +251,14 @@ func MaxMatchingOld(graph *Graph) int {
 						}
 					}
 				} else {
-					// обычный случай: расширяем дерево
+					// Обычный случай: расширяем дерево
 					parent[v] = u
 					if match[v] < 0 {
-						// найден увеличивающий путь
+						// Нашли увеличивающий путь
 						augmentPath(v, u)
 						return true
 					}
-					// добавляем пару вершину в очередь
+					// Добавляем пару вершину в очередь
 					next := match[v]
 					if !inQueue[next] {
 						inQueue[next] = true
@@ -251,7 +270,7 @@ func MaxMatchingOld(graph *Graph) int {
 		return false
 	}
 
-	// основной цикл: для каждой свободной вершины пытаемся найти путь
+	// Основной цикл: для каждой свободной вершины ищем увеличивающий путь
 	result := 0
 	for v := 0; v < n; v++ {
 		if match[v] < 0 {
@@ -263,7 +282,7 @@ func MaxMatchingOld(graph *Graph) int {
 	return result
 }
 
-func MaxMatching(graph *Graph) int {
+func MaxMatchingGreed(graph *Graph) int {
 	n := graph.NumVertices
 	used := make([]bool, n)
 	count := 0

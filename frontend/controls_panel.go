@@ -3,15 +3,18 @@ package frontend
 import (
 	"Genetic-algorithm/backend"
 	"Genetic-algorithm/backend/genetic"
+	"strconv"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"strconv"
 )
 
 type ControlsPanel struct {
-	StartBtn          *widget.Button
-	StopBtn           *widget.Button
+	StartBtn *widget.Button
+	StopBtn  *widget.Button
+	PlotBtn  *widget.Button
+
 	PopulationSize    *widget.Entry
 	Generations       *widget.Entry
 	MutationRate      *widget.Entry
@@ -26,6 +29,7 @@ type ControlsPanel struct {
 	TournamentSize *widget.Entry
 	OnStart        func()
 	OnStop         func()
+	OnPlot         func()
 }
 
 func NewControlsPanel() *ControlsPanel {
@@ -45,6 +49,26 @@ func NewControlsPanel() *ControlsPanel {
 	}
 	cp.setDefaults()
 
+	// Disable operator controls unless Combined is selected
+	updateOperatorControls := func() {
+		enabled := cp.EvolutionModel.Selected == "Combined"
+		cp.CrossoverType.Disable()
+		cp.MutationType.Disable()
+		cp.SelectionType.Disable()
+		cp.TournamentSize.Disable()
+		if enabled {
+			cp.CrossoverType.Enable()
+			cp.MutationType.Enable()
+			cp.SelectionType.Enable()
+			cp.TournamentSize.Enable()
+		}
+	}
+	cp.EvolutionModel.OnChanged = func(_ string) {
+		updateOperatorControls()
+	}
+	// Set initial state
+	updateOperatorControls()
+
 	cp.StartBtn = widget.NewButton("Start", func() {
 		if cp.OnStart != nil {
 			cp.OnStart()
@@ -53,6 +77,12 @@ func NewControlsPanel() *ControlsPanel {
 	cp.StopBtn = widget.NewButton("Stop", func() {
 		if cp.OnStop != nil {
 			cp.OnStop()
+		}
+	})
+
+	cp.PlotBtn = widget.NewButton("Plot Results", func() {
+		if cp.OnPlot != nil {
+			cp.OnPlot()
 		}
 	})
 	return cp
@@ -97,41 +127,66 @@ func (cp *ControlsPanel) GetParams() backend.Params {
 	}
 
 	var cross genetic.CrossoverStrategy
-	switch cp.CrossoverType.Selected {
-	case "Single-point":
-		cross = &genetic.SinglePoint{}
-	case "Two-point":
-		cross = &genetic.TwoPoint{}
-	case "Combined":
-		cross = &genetic.CombinedCrossover{}
-	}
-
 	var mut genetic.MutationStrategy
-	switch cp.MutationType.Selected {
-	case "Classic":
-		mut = &genetic.ClassicMutationStrategy{}
-	case "Island":
-		mut = &genetic.IslandMutationStrategy{}
-	case "Steady-State":
-		mut = &genetic.SteadyStateMutationStrategy{}
-	case "Conflict-Adaptive":
-		mut = &genetic.ConflictAdaptiveMutationStrategy{}
-	case "Augmenting-Path":
-		mut = &genetic.AugmentingPathMutationStrategy{}
-	case "Combined":
-		mut = &genetic.CombinedMutationStrategy{Strategies: []genetic.MutationStrategy{
-			&genetic.ClassicMutationStrategy{}, &genetic.IslandMutationStrategy{},
-		}}
-	}
-
 	var sel genetic.SelectionStrategy
-	switch cp.SelectionType.Selected {
-	case "Tournament":
-		sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
-	case "Roulette":
-		sel = &genetic.RouletteWheelSelectionStrategy{}
-	case "Rank":
-		sel = &genetic.RankSelectionStrategy{}
+	if cp.EvolutionModel.Selected == "Combined" {
+		switch cp.CrossoverType.Selected {
+		case "Single-point":
+			cross = &genetic.SinglePoint{}
+		case "Two-point":
+			cross = &genetic.TwoPoint{}
+		case "Combined":
+			cross = &genetic.CombinedCrossover{}
+		}
+
+		switch cp.MutationType.Selected {
+		case "Classic":
+			mut = &genetic.ClassicMutationStrategy{}
+		case "Island":
+			mut = &genetic.IslandMutationStrategy{}
+		case "Steady-State":
+			mut = &genetic.SteadyStateMutationStrategy{}
+		case "Conflict-Adaptive":
+			mut = &genetic.ConflictAdaptiveMutationStrategy{}
+		case "Augmenting-Path":
+			mut = &genetic.AugmentingPathMutationStrategy{}
+		case "Combined":
+			mut = &genetic.CombinedMutationStrategy{Strategies: []genetic.MutationStrategy{
+				&genetic.ClassicMutationStrategy{}, &genetic.IslandMutationStrategy{},
+			}}
+		}
+
+		switch cp.SelectionType.Selected {
+		case "Tournament":
+			sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
+		case "Roulette":
+			sel = &genetic.RouletteWheelSelectionStrategy{}
+		case "Rank":
+			sel = &genetic.RankSelectionStrategy{}
+		}
+	} else {
+		switch cp.EvolutionModel.Selected {
+		case "Classic":
+			cross = &genetic.SinglePoint{}
+			mut = &genetic.ClassicMutationStrategy{}
+			sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
+		case "Island":
+			cross = &genetic.TwoPoint{}
+			mut = &genetic.IslandMutationStrategy{}
+			sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
+		case "Steady-State":
+			cross = &genetic.SinglePoint{}
+			mut = &genetic.SteadyStateMutationStrategy{}
+			sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
+		case "Memetic":
+			cross = &genetic.TwoPoint{}
+			mut = &genetic.AugmentingPathMutationStrategy{}
+			sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
+		default:
+			cross = &genetic.SinglePoint{}
+			mut = &genetic.ClassicMutationStrategy{}
+			sel = &genetic.TournamentSelectionStrategy{TournamentSize: tSize}
+		}
 	}
 
 	return backend.Params{
@@ -172,6 +227,10 @@ func (cp *ControlsPanel) Render() fyne.CanvasObject {
 			widget.NewLabel("Migration Interval:"), cp.MigrationInterval,
 		)),
 	)
-	btns := container.NewHBox(cp.StartBtn, cp.StopBtn)
+	btns := container.NewHBox(
+		cp.StartBtn,
+		cp.StopBtn,
+		cp.PlotBtn,
+	)
 	return container.NewBorder(nil, btns, nil, nil, acc)
 }

@@ -5,10 +5,6 @@ import (
 	"sort"
 )
 
-type SelectionStrategy interface {
-	Select(population []Chromosome) Chromosome
-}
-
 type ElitismWrapper struct {
 	Strategy  SelectionStrategy
 	EliteSize int
@@ -36,6 +32,10 @@ func (t *TournamentSelectionStrategy) Select(population []Chromosome) Chromosome
 		}
 	}
 	return best
+}
+
+func (t *TournamentSelectionStrategy) GetName() string {
+	return "Tournament"
 }
 
 // -------------------- Селекция методом рулетки -------------------- //
@@ -66,6 +66,10 @@ func (r *RouletteWheelSelectionStrategy) Select(population []Chromosome) Chromos
 		}
 	}
 	return population[len(population)-1]
+}
+
+func (r *RouletteWheelSelectionStrategy) GetName() string {
+	return "RouletteWheel"
 }
 
 // --------------------- Ранжированная селекция --------------------- //
@@ -102,6 +106,10 @@ func (r *RankSelectionStrategy) Select(population []Chromosome) Chromosome {
 	return sorted[len(sorted)-1]
 }
 
+func (r *RankSelectionStrategy) GetName() string {
+	return "Rank"
+}
+
 // ---------------------------- Элитизм ---------------------------- //
 
 func (ga *Algorithm) getElites() []Chromosome {
@@ -110,4 +118,8 @@ func (ga *Algorithm) getElites() []Chromosome {
 		return sorted[i].Fitness > sorted[j].Fitness // Сортировка по убыванию
 	})
 	return sorted[:ga.SelectionStrategy.EliteSize] // Возвращаем первых N элементов
+}
+
+func (s *ElitismWrapper) GetName() string {
+	return "Elitism+" + s.Strategy.GetName()
 }
