@@ -36,6 +36,7 @@ type ExperimentResult struct {
 	FitnessHistory      []int
 	BestMatchingEdges   []int  // Индексы рёбер в наибольшем допустимом паросочетании
 	BestChromosomeGenes []bool // Гены лучшей хромосомы
+	MutationStrategy    string // Тип мутации для Combined модели
 }
 
 // GASolver представляет решатель задачи о максимальном паросочетании
@@ -68,11 +69,12 @@ func (s *GASolver) Start(graph genetic.Graph, params Params, graphName string) {
 
 	// Инициализация результата
 	result := ExperimentResult{
-		GraphName:      graphName,
-		Algorithm:      params.EvolutionModel.String(),
-		GraphVertices:  graph.NumVertices,
-		GraphEdges:     len(graph.Edges),
-		FitnessHistory: make([]int, 0, params.Generations),
+		GraphName:        graphName,
+		Algorithm:        params.EvolutionModel.String(),
+		GraphVertices:    graph.NumVertices,
+		GraphEdges:       len(graph.Edges),
+		FitnessHistory:   make([]int, 0, params.Generations),
+		MutationStrategy: params.MutationStrategy.GetName(), // Используем GetName() для получения названия стратегии мутации
 	}
 
 	go func() {
@@ -134,7 +136,7 @@ func (s *GASolver) Start(graph genetic.Graph, params Params, graphName string) {
 		s.UpdateChan <- best
 
 		// Основной цикл
-		for gen := 1; gen <= ga.Generations && s.IsRunning; gen++ {
+		for gen := 0; gen <= ga.Generations && s.IsRunning; gen++ {
 			ga.CurrentGeneration = gen
 			// Evolve population using the selected model strategy
 			if err := ga.EvolutionModel.Evolve(ga); err != nil {
@@ -157,14 +159,14 @@ func (s *GASolver) Start(graph genetic.Graph, params Params, graphName string) {
 
 			// Досрочный выход
 			if target > 0 && ga.BestSoFarEdges >= target {
-				ga.Logger.LogSuccess("Reached optimal at gen %d", gen)
+				ga.Logger.LogSuccess("Reached optimal at gen %d", gen+1)
 				break
 			}
 
 		}
 
 		finalBest := ga.GetBestSoFar()
-		finalBestValid := countValidMatchingEdges(finalBest, ga.Graph)
+		finalBestValid := finalBest.Fitness
 		ga.Logger.LogSuccess("GA finished. Best matching = %d", finalBestValid)
 
 		// Фиксируем результаты
